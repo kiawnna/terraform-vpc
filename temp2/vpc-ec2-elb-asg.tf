@@ -1,88 +1,116 @@
-provider "aws" {
-  profile    = "kiasandbox"
-  region     = "us-west-2"
-}
-
-resource "aws_vpc" "terraform" {
-  cidr_block       = "10.0.0.0/16"
+resource "aws_vpc" "main" {
+  cidr_block       = var.vpc_cidr_block
   instance_tenancy = "default"
 
   tags = {
-    Name = "terraform"
+    Name = "${var.app_name}-vpc"
   }
 }
 
-resource "aws_subnet" "tf-public-1" {
-  availability_zone = "us-west-2a"
-  vpc_id     = aws_vpc.terraform.id
-  cidr_block = "10.0.1.0/24"
+# Internet gateway.
+resource "aws_internet_gateway" "ig" {
+  vpc_id = aws_vpc.main.id
 
   tags = {
-    Name = "tf-public-subnet-1"
+    Name = "${var.app_name}-ig"
   }
 }
 
-resource "aws_subnet" "tf-public-2" {
+# Public subnet 1.
+resource "aws_subnet" "public-1" {
+  availability_zone = "us-west-2a"
+  vpc_id     = aws_vpc.main.id
+  cidr_block = var.public_subnet1_cidr_block
+
+  tags = {
+    Name = "${var.app_name}-publicsubnet-1"
+  }
+}
+
+# Public subnet 2.
+resource "aws_subnet" "public-2" {
   availability_zone = "us-west-2b"
-  vpc_id     = aws_vpc.terraform.id
-  cidr_block = "10.0.2.0/24"
+  vpc_id     = aws_vpc.main.id
+  cidr_block = var.public_subnet2_cidr_block
 
   tags = {
-    Name = "tf-public-subnet-2"
+    Name = "${var.app_name}-publicsubnet-2"
   }
 }
 
-resource "aws_subnet" "tf-private-1" {
-  availability_zone = "us-west-2a"
-  vpc_id     = aws_vpc.terraform.id
-  cidr_block = "10.0.3.0/24"
+# Public route table.
+resource "aws_route_table" "public-rt" {
+  vpc_id = aws_vpc.main.id
 
-  tags = {
-    Name = "tf-private-subnet-1"
-  }
-}
-
-//resource "aws_subnet" "tf-private-2" {
-//  availability_zone = "us-west-2b"
-//  vpc_id     = aws_vpc.terraform.id
-//  cidr_block = "10.0.4.0/24"
-//
-//  tags = {
-//    Name = "tf-private-subnet-2"
-//  }
-//}
-
-resource "aws_internet_gateway" "terraform-ig" {
-  vpc_id = aws_vpc.terraform.id
-
-  tags = {
-    Name = "terraform-ig"
-  }
-}
-
-resource "aws_route_table" "terraform-rt" {
-  vpc_id = aws_vpc.terraform.id
-  
     route {
       cidr_block = "0.0.0.0/0"
-      gateway_id = aws_internet_gateway.terraform-ig.id
+      gateway_id = aws_internet_gateway.ig.id
+    }
+    tags = {
+        Name = "${var.app_name}-public-rt"
     }
 }
 
-resource "aws_route_table_association" "rta-subnet-public-1" {
-  subnet_id      = aws_subnet.tf-public-1.id
-  route_table_id = aws_route_table.terraform-rt.id
+# Public route table association between public-subnet-1 and the public route table.
+resource "aws_route_table_association" "rta-public-1" {
+  subnet_id      = aws_subnet.public-1.id
+  route_table_id = aws_route_table.public-rt.id
 }
 
-resource "aws_route_table_association" "rta-subnet-public-2" {
-  subnet_id      = aws_subnet.tf-public-2.id
-  route_table_id = aws_route_table.terraform-rt.id
+# Public route table association between public-subnet-2 and the public route table.
+resource "aws_route_table_association" "rta-public-2" {
+  subnet_id      = aws_subnet.public-2.id
+  route_table_id = aws_route_table.public-rt.id
 }
 
-resource "aws_security_group" "terraform-alb-sg" {
-  name        = "terraform-alb-sg"
+# Allocates an EIP to the nat gateway.
+resource "aws_eip" "nat" {
+    vpc      = true
+}
+
+# Nat gateway set up in public-subnet-1.
+resource "aws_nat_gateway" "gw" {
+    allocation_id = aws_eip.nat.id
+    subnet_id     = aws_subnet.public-1.id
+    tags = {
+        Name = "${var.app_name}-nat-gateway"
+    }
+}
+
+# Private subnet.
+resource "aws_subnet" "private-1" {
+  availability_zone = "us-west-2a"
+  vpc_id     = aws_vpc.main.id
+  cidr_block = var.private_subnet1_cidr_block
+
+  tags = {
+    Name = "${var.app_name}-privatesubnet-1"
+  }
+}
+
+# Private route table which routes to the nat gateway in public-subnet-1.
+resource "aws_route_table" "private-rt" {
+    vpc_id = aws_vpc.main.id
+    route {
+        cidr_block = "0.0.0.0/0"
+        gateway_id = aws_nat_gateway.gw.id
+    }
+    tags = {
+        Name = "${var.app_name}-private-rt"
+    }
+}
+
+# Associates the private subnet with the private route table.
+resource "aws_route_table_association" "rta-private-1" {
+    subnet_id      = aws_subnet.private-1.id
+    route_table_id = aws_route_table.private-rt.id
+}
+
+# Security group for a load balancer.
+resource "aws_security_group" "alb-sg" {
+  name        = "alb-sg"
   description = "Allow internet traffic"
-  vpc_id      = aws_vpc.terraform.id
+  vpc_id      = aws_vpc.main.id
 
   ingress {
     description = "http access"
@@ -108,18 +136,19 @@ resource "aws_security_group" "terraform-alb-sg" {
   }
 
   tags = {
-    Name = "allow-internet-traffic"
+    Name = "${var.app_name}-alb-sg"
   }
 }
 
-resource "aws_security_group" "terraform-ec2-sg" {
-  name        = "ec2_sg"
+# Security group for EC2 instances/application.####
+resource "aws_security_group" "ec2-sg" {
+  name        = "ec2-sg"
   description = "Allow traffic from alb"
-  vpc_id      = aws_vpc.terraform.id
+  vpc_id      = aws_vpc.main.id
 
   ingress {
     description = "access 80 from alb"
-    security_groups = [aws_security_group.terraform-alb-sg.id]
+    security_groups = [aws_security_group.alb-sg.id]
     from_port   = 443
     to_port     = 443
     protocol    = "tcp"
@@ -127,7 +156,7 @@ resource "aws_security_group" "terraform-ec2-sg" {
 
     ingress {
     description = "access 443 from alb"
-    security_groups = [aws_security_group.terraform-alb-sg.id]
+    security_groups = [aws_security_group.alb-sg.id]
     from_port   = 80
     to_port     = 80
     protocol    = "tcp"
@@ -141,92 +170,65 @@ resource "aws_security_group" "terraform-ec2-sg" {
   }
 
   tags = {
-    Name = "traffic-from-alb"
+    Name = "${var.app_name}-ec2-sg"
   }
 }
 
-resource "aws_launch_configuration" "tf-lc" {
-  name          = "tf-lc"
-  image_id      = "ami-0e34e7b9ca0ace12d"
-  instance_type = "t2.micro"
+# Launch configuration for an ASG.
+resource "aws_launch_configuration" "launchconfig" {
+  name          = "${var.app_name}-lc"
+  image_id      = var.image_id
+  instance_type = var.instance_type
 }
 
-//resource "aws_iam_role" "tf-asg-all-access" {
-//  name = "asg-all-access"
-//  assume_role_policy = <<EOF
-//{
-//  "Version": "2012-10-17",
-//  "Statement": [
-//    {
-//      "Sid": "",
-//      "Effect": "Allow",
-//      "Principal": {
-//        "Service": [
-//          "ec2.amazonaws.com"
-//        ]
-//      },
-//      "Action": "sts:AssumeRole"
-//    }
-//  ]
-//}
-//EOF
-//}
-//
-//resource "aws_iam_role_policy_attachment" "asg-all-access-policy-attachment" {
-//    role = aws_iam_role.tf-asg-all-access.name
-//    policy_arn = "arn:aws:iam::aws:policy/aws-service-role/AutoScalingServiceRolePolicy"
-//}
-
 resource "aws_autoscaling_group" "tf-asg" {
-  name                      = "tf-asg"
-  max_size                  = 2
-  min_size                  = 1
+  name                      = "${var.app_name}-asg"
+  max_size                  = var.asg_max_size
+  min_size                  = var.asg_min_size
   health_check_grace_period = 300
   health_check_type         = "ELB"
-  desired_capacity          = 1
+  desired_capacity          = var.asg_desired_count
   force_delete              = true
-  launch_configuration      = aws_launch_configuration.tf-lc.name
-  target_group_arns         = [aws_lb_target_group.terraform-tg-1.arn]
-  vpc_zone_identifier       = [aws_subnet.tf-private-1.id]
-
-//  initial_lifecycle_hook {
-//    name                 = "tf-lch"
-//    default_result       = "CONTINUE"
-//    heartbeat_timeout    = 2000
-//    lifecycle_transition = "autoscaling:EC2_INSTANCE_LAUNCHING"
-////    role_arn = aws_iam_role.tf-asg-all-access.arn
-////    notification_target_arn = ""
-//  }
+  launch_configuration      = aws_launch_configuration.launchconfig.name
+  target_group_arns         = [aws_lb_target_group.tg-1.arn]
+  vpc_zone_identifier       = [aws_subnet.private-1.id]
 
   timeouts {
     delete = "15m"
   }
 }
 
-resource "aws_lb_target_group" "terraform-tg-1" {
-  name     = "ec2-tg-1"
+# Target group for an ASG that the ALB forwards traffic (over ports 8 and 443) to.
+resource "aws_lb_target_group" "tg-1" {
+  name     = "tg-1"
   port     = 443
   protocol = "HTTP"
-  vpc_id   = aws_vpc.terraform.id
+  vpc_id   = aws_vpc.main.id
   target_type = "instance"
+
+  tags = {
+    Name = "${var.app_name}-alb"
+  }
 }
 
-resource "aws_lb" "tf-ec2-alb" {
-  name               = "tf-ec2-alb"
+# Application load balancer resource, highly available in two public subnets, secured with its own security group.
+resource "aws_lb" "alb" {
+  name               = "alb"
   internal           = false
   load_balancer_type = "application"
-  security_groups    = [aws_security_group.terraform-alb-sg.id]
-  subnets            = [aws_subnet.tf-public-1.id, aws_subnet.tf-public-2.id]
+  security_groups    = [aws_security_group.alb-sg.id]
+  subnets            = [aws_subnet.public-1.id, aws_subnet.public-2.id]
 
   enable_deletion_protection = false
 
   tags = {
-    Name = "tf-ec2-alb"
+    Name = "${var.app_name}-alb"
   }
 }
 
-resource "aws_lb_listener" "tf-tg-ec2-1-listener-443" {
-  load_balancer_arn = aws_lb.tf-ec2-alb.arn
+# Listener for the ALB that forwards port 443 traffic to target group 1.
+resource "aws_lb_listener" "listener-443" {
+  load_balancer_arn = aws_lb.alb.arn
   port              = "443"
   protocol          = "HTTPS"
   ssl_policy        = "ELBSecurityPolicy-2016-08"
@@ -234,19 +236,19 @@ resource "aws_lb_listener" "tf-tg-ec2-1-listener-443" {
 
   default_action {
     type             = "forward"
-    target_group_arn = aws_lb_target_group.terraform-tg-1.arn
+    target_group_arn = aws_lb_target_group.tg-1.arn
   }
 }
 
-resource "aws_lb_listener" "tf-tg-ec2-1-listener-80" {
-  load_balancer_arn = aws_lb.tf-ec2-alb.arn
+# Listener for the ALB that forwards port 80 traffic to target group 1.
+resource "aws_lb_listener" "listener-80" {
+  load_balancer_arn = aws_lb.alb.arn
   port              = "80"
   protocol          = "HTTP"
-//  certificate_arn   = "arn:aws:acm:us-west-2:266245855374:certificate/0a78e678-e87c-43e6-a2f7-443a54aa8703"
 
   default_action {
     type             = "forward"
-    target_group_arn = aws_lb_target_group.terraform-tg-1.arn
+    target_group_arn = aws_lb_target_group.tg-1.arn
   }
 }
 
