@@ -1,3 +1,7 @@
+# All variables should be specified in variables.tf, otherwise defaults will be used.
+# The exception is the variable cert_arn, which MUST be updated in order for this solutions to deploy.
+
+# Virtual private cloud with custom cidr block.
 resource "aws_vpc" "main" {
   cidr_block       = var.vpc_cidr_block
   instance_tenancy = "default"
@@ -7,7 +11,7 @@ resource "aws_vpc" "main" {
   }
 }
 
-# Internet gateway.
+# Internet gateway attached to VPC.
 resource "aws_internet_gateway" "ig" {
   vpc_id = aws_vpc.main.id
 
@@ -140,7 +144,7 @@ resource "aws_security_group" "alb-sg" {
   }
 }
 
-# Security group for EC2 instances/application.####
+# Security group for EC2 instances/application/microservice.
 resource "aws_security_group" "ec2-sg" {
   name        = "ec2-sg"
   description = "Allow traffic from alb"
@@ -174,7 +178,7 @@ resource "aws_security_group" "ec2-sg" {
   }
 }
 
-# Launch configuration for an ASG.
+# Launch configuration for the ASG.
 resource "aws_launch_configuration" "launchconfig" {
   name          = "${var.app_name}-lc"
   image_id      = var.image_id

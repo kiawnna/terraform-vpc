@@ -1,4 +1,5 @@
 # You must add a valid certificate arn. Once you have, everything else will deploy with default values.
+
 variable "vpc_cidr_block" {
     type = string
     default = "10.200.0.0/16"
