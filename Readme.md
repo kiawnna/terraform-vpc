@@ -14,4 +14,4 @@ Simple terraform template that will launch a custom VPC with:
 
 There are variables set so that the template can be easily customized for each new deployment.
 
-Made this for personal use so that I can easily deploy new VPCs with much less effort!
+This is a template with no modules, and simple resources for easy customization. I built this for other just learning Terraform who needed an easy place to start and learn without the complication of modules and workspaces.
