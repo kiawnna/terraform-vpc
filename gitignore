@@ -1,2 +1,5 @@
 .terraform/*
 .idea/*
+terraform.tfstate
+.terraform.lock.hcl
+.terraform/

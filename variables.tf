@@ -40,7 +40,7 @@ variable "asg_desired_count" {
     type = number
     default = 2
 }
-variable "cert_arn" {
-    type = string
-    default = "arn:aws:acm:aws-region:aws-account-id:certificate/certificatenumber"
-}
+#variable "cert_arn" {
+#    type = string
+#    default = ""
+#}

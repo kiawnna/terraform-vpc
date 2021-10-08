@@ -230,19 +230,19 @@ resource "aws_lb" "alb" {
   }
 }
 
-# Listener for the ALB that forwards port 443 traffic to target group 1.
-resource "aws_lb_listener" "listener-443" {
-  load_balancer_arn = aws_lb.alb.arn
-  port              = "443"
-  protocol          = "HTTPS"
-  ssl_policy        = "ELBSecurityPolicy-2016-08"
-  certificate_arn   = var.cert_arn
+## Listener for the ALB that forwards port 443 traffic to target group 1.
+#resource "aws_lb_listener" "listener-443" {
+#  load_balancer_arn = aws_lb.alb.arn
+#  port              = "443"
+#  protocol          = "HTTPS"
+#  ssl_policy        = "ELBSecurityPolicy-2016-08"
+#  certificate_arn   = var.cert_arn
 
-  default_action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.tg-1.arn
-  }
-}
+#  default_action {
+#    type             = "forward"
+#    target_group_arn = aws_lb_target_group.tg-1.arn
+#  }
+#}
 
 # Listener for the ALB that forwards port 80 traffic to target group 1.
 resource "aws_lb_listener" "listener-80" {
